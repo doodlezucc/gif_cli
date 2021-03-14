@@ -8,6 +8,8 @@ then run `gif` inside a directory that contains image sequences.
 **Please note** that gif_cli requires [ffmpeg](https://www.ffmpeg.org/) to be installed
 on your machine.
 
+![Demo video (which in itself is also a GIF)](demo.gif)
+
 ## Building
 
 Once you have [Dart](https://dart.dev/get-dart) installed, run
