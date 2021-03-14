@@ -1,10 +1,13 @@
 name: gif_cli
 description: Convert image sequences into animated GIFs.
-# version: 1.0.0
-# homepage: https://www.example.com
+version: 1.0.0
+repository: https://github.com/doodlezucc/gif_cli.git
 
 environment:
   sdk: '>=2.10.0 <3.0.0'
+
+executables:
+  gif: gif_cli
 
 dependencies:
   path: ^1.7.0
