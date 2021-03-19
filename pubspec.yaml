@@ -1,5 +1,5 @@
 name: gif_cli
-description: Convert image sequences into animated GIFs.
+description: An interactive CLI to convert image sequences into animated GIFs.
 version: 1.0.0
 repository: https://github.com/doodlezucc/gif_cli.git
 
