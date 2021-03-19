@@ -41,7 +41,7 @@ void main(List<String> arguments) async {
   var showMeta = false;
   if (showMeta) {
     print('');
-    await gif_cli.finishFFmpeg(
+    await gif_cli.debugFFmpegProcess(
         await Process.start('ffprobe', [output, '-hide_banner']),
         printAll: true);
   }

@@ -11,7 +11,13 @@ final _regexLastDigits = RegExp(r'(\d+)(?!.*\d)');
 
 final _imageExtensions = ['png', 'jpg'];
 
-Future<void> finishFFmpeg(
+/// Forwards lines of a ffmpeg process to the console and waits for it finish.
+///
+/// [printFrames] - Makes sure that every progress update is printed.
+///
+/// [printAll] - Prints every single line of [process.stderr] (ffmpeg's output
+/// stream).
+Future<void> debugFFmpegProcess(
   Process process, {
   bool printFrames = true,
   bool printAll = false,
@@ -39,20 +45,28 @@ double toValidFps(double fps) {
   return math.min(fps, 50);
 }
 
+/// A container of indexed image files.
 class ImageSequence {
-  var frames = SplayTreeMap<int, File>();
-  double inputFps = 120;
+  final frames = SplayTreeMap<int, File>();
+  double inputFps = 30;
   double get outputFps => toValidFps(inputFps);
 
-  int digits = 0;
+  int _digits = 0;
   final String prefix;
   final String suffix;
 
+  /// The first frame's index.
   int get start => frames.firstKey();
+
+  /// The last frame's index.
   int get end => frames.lastKey();
 
+  /// [prefix] - What stands before the index of each frame.
+  ///
+  /// [suffix] - What stands after the index of each frame.
   ImageSequence(this.prefix, this.suffix);
 
+  /// Returns `true` if every frame from [start] to [end] is present.
   bool get isComplete {
     for (var i = start; i <= end; i++) {
       if (!frames.containsKey(i)) {
@@ -62,56 +76,56 @@ class ImageSequence {
     return true;
   }
 
+  /// Returns `true` if the sequence consists of 2 or more frames.
   bool get makesSense => frames.length > 1;
 
-  @override
-  String toString() =>
-      '"${path.basename(prefix + '[$start-$end]' + suffix)}"' +
-      (!isComplete ? ' (incomplete!)' : '');
+  List<String> get _arguments => [
+        ..._defaultArguments,
+        '-start_number',
+        '$start',
+        '-r',
+        '$inputFps',
+        '-i',
+        '$prefix%${_digits.toString().padLeft(2, '0')}d.png',
+      ];
 
+  List<String> get _defaultArguments => ['-y', '-hide_banner'];
+
+  /// Inserts [f] at its name embedded index.
   void addFrame(File f) {
     var fileName = path.basename(f.path);
     var frameString = _getDigits(fileName);
     var frame = int.parse(frameString);
     var newDigs = frameString.length;
 
-    if (digits > 0 && digits != newDigs) {
+    if (_digits > 0 && _digits != newDigs) {
       print('Warning: changing digits');
     }
-    digits = newDigs;
+    _digits = newDigs;
 
     frames[frame] = f;
   }
 
-  List<String> get arguments => [
-        ...defaultArguments,
-        '-start_number',
-        '$start',
-        '-r',
-        '$inputFps',
-        '-i',
-        '$prefix%${digits.toString().padLeft(2, '0')}d.png',
-      ];
-
-  List<String> get defaultArguments => ['-y', '-hide_banner'];
-
+  /// Generates a color palette image based on all frames.
   Future<File> generatePalette() async {
     var palettePath = 'gif_palette.png';
 
     var process = await Process.start('ffmpeg', [
-      ...arguments,
+      ..._arguments,
       '-filter_complex',
       'scale=-1:-1:flags=lanczos,palettegen',
       palettePath,
     ]);
 
-    await finishFFmpeg(process, printFrames: false);
+    await debugFFmpegProcess(process, printFrames: false);
 
     print('Generated palette');
 
     return File(palettePath);
   }
 
+  /// Starts a ffmpeg process to convert all frames
+  /// into a single animated GIF.
   Future<File> convertToGif(File output) async {
     //var inputs = <String>[];
     //frames.values.forEach((e) => inputs.addAll(['-i', e.path]));
@@ -121,7 +135,7 @@ class ImageSequence {
     await output.create(recursive: true);
 
     var args = [
-      ...arguments,
+      ..._arguments,
       '-i',
       palette.path,
       '-filter_complex',
@@ -130,45 +144,65 @@ class ImageSequence {
     ];
 
     var process = await Process.start('ffmpeg', args);
-    await finishFFmpeg(process);
+    await debugFFmpegProcess(process);
 
     await palette.delete();
 
     return output;
   }
+
+  @override
+  String toString() =>
+      '"${path.basename(prefix + '[$start-$end]' + suffix)}"' +
+      (!isComplete ? ' (incomplete!)' : '');
 }
 
 String _getDigits(String filename) {
   return _regexLastDigits.stringMatch(filename);
 }
 
+/// Collects files from [dir] and returns all matched image sequences.
+/// Optionally recurses into sub-directories.
 Future<List<ImageSequence>> findSequences(Directory dir,
     {bool recursive = false}) async {
-  var files = <FileSystemEntity>[];
-  var completer = Completer<List<FileSystemEntity>>();
-  var lister = dir.list(recursive: recursive);
-  lister.listen((file) => files.add(file),
-      // should also register onError
-      onDone: () => completer.complete(files));
+  var files = <File>[];
+  var completer = Completer<List<File>>();
+  var fileStream = dir.list(recursive: recursive);
+  fileStream.listen(
+    (file) {
+      if (file is File) files.add(file);
+    },
+    onDone: () => completer.complete(files),
+  );
   return sequencesFromFiles(await completer.future);
 }
 
-List<ImageSequence> sequencesFromFiles(List<FileSystemEntity> files) {
+/// Analyzes the given [files] for images with similar file names
+/// and returns all sequences with 2 or more frames.
+///
+/// Image sequences are matched by comparing the start of each file name.
+///
+/// ```
+/// | a00.png, b1.png, foobar00001.jpg, |
+/// | a01.png,         foobar00002.jpg, |
+/// | a02.png                           |
+///
+///   =>  [a%.png, foobar%.jpg]
+/// ```
+List<ImageSequence> sequencesFromFiles(List<File> files) {
   var stems = <String, ImageSequence>{};
   for (var file in files) {
-    if (file is File) {
-      var fp = file.path;
+    var fp = file.path;
 
-      if (_imageExtensions.any((ext) => fp.endsWith('.$ext'))) {
-        if (path.basename(fp).contains(_regexDigits)) {
-          var prefix = fp.substring(0, fp.indexOf(_regexLastDigits));
-          stems
-              .putIfAbsent(
-                  prefix,
-                  () => ImageSequence(
-                      prefix, fp.substring(fp.lastIndexOf(_regexDigits) + 1)))
-              .addFrame(file);
-        }
+    if (_imageExtensions.any((ext) => fp.endsWith('.$ext'))) {
+      if (path.basename(fp).contains(_regexDigits)) {
+        var prefix = fp.substring(0, fp.indexOf(_regexLastDigits));
+        stems
+            .putIfAbsent(
+                prefix,
+                () => ImageSequence(
+                    prefix, fp.substring(fp.lastIndexOf(_regexDigits) + 1)))
+            .addFrame(file);
       }
     }
   }
