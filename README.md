@@ -15,7 +15,8 @@ into a GIF*
 on your machine.**
 
 ### Option 1: pub package
-[Dart](https://dart.dev/get-dart) users can simply run `dart pub global activate gif_cli`.
+[Dart](https://dart.dev/get-dart) users can simply run `dart pub global activate gif_cli`
+to install the package from [pub.dev](https://pub.dev/packages/gif_cli).
 
 ### Option 2: Standalone
 Download an executable from [Releases](https://github.com/doodlezucc/gif_cli/releases)
